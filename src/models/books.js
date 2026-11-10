@@ -1,12 +1,10 @@
-import { ObjectId } from 'mongodb';
 import { getDb } from '../db/connect.js';
 
 const booksCollection = () => getDb().collection('books');
 
 export const getAllBooks = async () => booksCollection().find().toArray();
 
-export const getBookById = async (id) =>
-  booksCollection().findOne({ _id: new ObjectId(id) });
+export const getBookById = async (id) => booksCollection().findOne({ id });
 
 export const createBook = async (book) => {
   const result = await booksCollection().insertOne(book);
@@ -15,20 +13,16 @@ export const createBook = async (book) => {
 
 export const updateBook = async (id, updates) => {
   const collection = booksCollection();
-  const objectId = new ObjectId(id);
-  const result = await collection.updateOne(
-    { _id: objectId },
-    { $set: updates },
-  );
+  const result = await collection.updateOne({ id }, { $set: updates });
 
   if (result.matchedCount === 0) {
     return null;
   }
 
-  return collection.findOne({ _id: objectId });
+  return collection.findOne({ id });
 };
 
 export const deleteBook = async (id) => {
-  const result = await booksCollection().deleteOne({ _id: new ObjectId(id) });
+  const result = await booksCollection().deleteOne({ id });
   return result.deletedCount > 0;
 };
