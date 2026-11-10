@@ -1,4 +1,6 @@
-import { ObjectId } from 'mongodb';
+import {
+  getAuthorById as getAuthorByIdModel,
+} from '../models/authors.js';
 import {
   createBook as createBookModel,
   deleteBook as deleteBookModel,
@@ -6,6 +8,29 @@ import {
   getBookById as getBookByIdModel,
   updateBook as updateBookModel,
 } from '../models/books.js';
+
+const isNonEmptyString = (value) =>
+  typeof value === 'string' && value.trim().length > 0;
+
+const isBookBody = (body) =>
+  body &&
+  typeof body === 'object' &&
+  !Array.isArray(body) &&
+  isNonEmptyString(body.id) &&
+  isNonEmptyString(body.authorId) &&
+  isNonEmptyString(body.title) &&
+  isNonEmptyString(body.publicationDate);
+
+const isBookUpdateBody = (body, id) =>
+  body &&
+  typeof body === 'object' &&
+  !Array.isArray(body) &&
+  isNonEmptyString(body.authorId) &&
+  isNonEmptyString(body.title) &&
+  isNonEmptyString(body.publicationDate) &&
+  (body.id === undefined || body.id === id);
+
+const isDuplicateKeyError = (error) => error?.code === 11000;
 
 export const getAllBooks = async (req, res) => {
   try {
@@ -19,10 +44,6 @@ export const getAllBooks = async (req, res) => {
 
 export const getBookById = async (req, res) => {
   try {
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'Invalid book ID' });
-    }
-
     const result = await getBookByIdModel(req.params.id);
     if (!result) {
       return res.status(404).json({ message: 'Book not found' });
@@ -36,28 +57,69 @@ export const getBookById = async (req, res) => {
 };
 
 export const createBook = async (req, res) => {
+  const body = req.body;
+  if (!isBookBody(body)) {
+    return res.status(400).json({
+      message: 'id, authorId, title, and publicationDate are required',
+    });
+  }
+
+  const book = {
+    id: body.id.trim(),
+    authorId: body.authorId.trim(),
+    title: body.title.trim(),
+    publicationDate: body.publicationDate.trim(),
+  };
+
   try {
-    const book = { ...req.body };
-    delete book._id;
+    if (await getBookByIdModel(book.id)) {
+      return res.status(400).json({ message: `Duplicate book id: ${book.id}` });
+    }
+
+    if (!(await getAuthorByIdModel(book.authorId))) {
+      return res.status(400).json({
+        message: `Author not found for authorId: ${book.authorId}`,
+      });
+    }
 
     const result = await createBookModel(book);
     return res.status(201).json(result);
   } catch (error) {
+    if (isDuplicateKeyError(error)) {
+      return res.status(400).json({ message: `Duplicate book id: ${book.id}` });
+    }
+
     console.error('Failed to create book:', error);
     return res.status(500).json({ message: 'Internal server error' });
   }
 };
 
 export const updateBook = async (req, res) => {
+  const { id } = req.params;
+  const body = req.body;
+  if (!isBookUpdateBody(body, id)) {
+    return res.status(400).json({
+      message: 'authorId, title, and publicationDate are required; id cannot be changed',
+    });
+  }
+
   try {
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'Invalid book ID' });
+    if (!(await getBookByIdModel(id))) {
+      return res.status(404).json({ message: 'Book not found' });
     }
 
-    const updates = { ...req.body };
-    delete updates._id;
+    const authorId = body.authorId.trim();
+    if (!(await getAuthorByIdModel(authorId))) {
+      return res.status(400).json({
+        message: `Author not found for authorId: ${authorId}`,
+      });
+    }
 
-    const result = await updateBookModel(req.params.id, updates);
+    const result = await updateBookModel(id, {
+      authorId,
+      title: body.title.trim(),
+      publicationDate: body.publicationDate.trim(),
+    });
     if (!result) {
       return res.status(404).json({ message: 'Book not found' });
     }
@@ -71,16 +133,12 @@ export const updateBook = async (req, res) => {
 
 export const deleteBook = async (req, res) => {
   try {
-    if (!ObjectId.isValid(req.params.id)) {
-      return res.status(400).json({ message: 'Invalid book ID' });
-    }
-
     const deleted = await deleteBookModel(req.params.id);
     if (!deleted) {
       return res.status(404).json({ message: 'Book not found' });
     }
 
-    return res.status(204).json({});
+    return res.status(204).send();
   } catch (error) {
     console.error('Failed to delete book:', error);
     return res.status(500).json({ message: 'Internal server error' });
